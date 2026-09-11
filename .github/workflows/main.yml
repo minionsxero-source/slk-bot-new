@@ -1,0 +1,44 @@
+name: MT5 Windows Smoke Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  mt5-test:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        shell: powershell
+        run: |
+          python -m pip install --upgrade pip
+          pip install MetaTrader5==5.0.6180
+
+      - name: Download MetaTrader 5
+        shell: powershell
+        run: |
+          $url = "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
+          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\mt5setup.exe"
+
+      - name: Install MetaTrader 5
+        shell: powershell
+        run: |
+          Start-Process "$env:TEMP\mt5setup.exe" `
+            -ArgumentList "/auto" `
+            -Wait
+
+      - name: Run MT5 connection test
+        env:
+          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
+          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
+          MT5_SERVER: ${{ secrets.MT5_SERVER }}
+        run: |
+          python mt5_smoke_test.py
