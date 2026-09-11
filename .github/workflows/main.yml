@@ -29,18 +29,10 @@ jobs:
           $url = "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
           $installer = "$env:RUNNER_TEMP\mt5setup.exe"
 
-          Write-Host "Downloading MT5..."
           Invoke-WebRequest -Uri $url -OutFile $installer
 
           if (!(Test-Path $installer)) {
-            throw "MT5 installer was not downloaded."
-          }
-
-          $size = (Get-Item $installer).Length
-          Write-Host "Installer size: $size bytes"
-
-          if ($size -lt 100000) {
-            throw "Downloaded MT5 installer looks invalid."
+            throw "MT5 installer download failed."
           }
 
       - name: Install MT5
@@ -48,67 +40,49 @@ jobs:
         run: |
           $installer = "$env:RUNNER_TEMP\mt5setup.exe"
 
-          Write-Host "Starting MT5 installer..."
           Start-Process `
             -FilePath $installer `
             -ArgumentList "/auto" `
-            -Wait `
-            -NoNewWindow
+            -Wait
 
           Start-Sleep -Seconds 5
 
-          Write-Host "Searching for terminal64.exe..."
+          $terminal = "C:\Program Files\MetaTrader 5\terminal64.exe"
 
-          $searchPaths = @(
-            "$env:APPDATA\MetaQuotes\Terminal",
-            "$env:LOCALAPPDATA\MetaQuotes\Terminal",
-            "C:\Program Files\MetaTrader 5",
-            "C:\Program Files (x86)\MetaTrader 5",
-            "C:\MT5"
-          )
-
-          $terminal = $null
-
-          foreach ($path in $searchPaths) {
-            if (Test-Path $path) {
-              Write-Host "Searching: $path"
-
-              $found = Get-ChildItem `
-                -Path $path `
-                -Filter "terminal64.exe" `
-                -Recurse `
-                -ErrorAction SilentlyContinue |
-                Select-Object -First 1
-
-              if ($found) {
-                $terminal = $found
-                break
-              }
-            }
+          if (!(Test-Path $terminal)) {
+            throw "terminal64.exe was not found."
           }
 
-          if ($null -eq $terminal) {
-            Write-Host "MT5 terminal was not found."
-            Write-Host "Listing possible MT5 files..."
+          Write-Host "MT5 found:"
+          Write-Host $terminal
 
-            Get-ChildItem `
-              -Path "$env:APPDATA" `
-              -Filter "terminal64.exe" `
-              -Recurse `
-              -ErrorAction SilentlyContinue |
-              Select-Object -First 20 FullName
+          "MT5_TERMINAL_PATH=$terminal" |
+            Out-File $env:GITHUB_ENV -Append -Encoding utf8
 
-            throw "terminal64.exe was not found after MT5 installation."
+      - name: Start MT5 terminal
+        shell: powershell
+        run: |
+          $terminal = $env:MT5_TERMINAL_PATH
+
+          Write-Host "Starting MT5..."
+          Write-Host $terminal
+
+          Start-Process `
+            -FilePath $terminal `
+            -ArgumentList "/portable" `
+            -WorkingDirectory (Split-Path $terminal)
+
+          Write-Host "Waiting for MT5 to start..."
+
+          Start-Sleep -Seconds 15
+
+          $process = Get-Process terminal64 -ErrorAction SilentlyContinue
+
+          if ($null -eq $process) {
+            throw "MT5 terminal process is not running."
           }
 
-          Write-Host "FOUND MT5:"
-          Write-Host $terminal.FullName
-
-          "MT5_TERMINAL_PATH=$($terminal.FullName)" |
-            Out-File `
-              -FilePath $env:GITHUB_ENV `
-              -Append `
-              -Encoding utf8
+          Write-Host "MT5 terminal process is running."
 
       - name: Run MT5 connection test
         env:
