@@ -5,11 +5,14 @@ import MetaTrader5 as mt5
 
 
 # ============================================================
-# ENVIRONMENT VARIABLES
+# ENVIRONMENT
 # ============================================================
 
 login = int(
-    os.environ.get("MT5_LOGIN", "0")
+    os.environ.get(
+        "MT5_LOGIN",
+        "0"
+    )
 )
 
 password = os.environ.get(
@@ -29,33 +32,32 @@ terminal_path = os.environ.get(
 
 
 # ============================================================
-# BASIC VALIDATION
+# VALIDATION
 # ============================================================
 
 if not login:
     raise SystemExit(
-        "ERROR: MT5_LOGIN GitHub Secret is missing."
+        "ERROR: MT5_LOGIN secret is missing."
     )
 
 if not password:
     raise SystemExit(
-        "ERROR: MT5_PASSWORD GitHub Secret is missing."
+        "ERROR: MT5_PASSWORD secret is missing."
     )
 
 if not server:
     raise SystemExit(
-        "ERROR: MT5_SERVER GitHub Secret is missing."
+        "ERROR: MT5_SERVER secret is missing."
     )
 
 if not terminal_path:
     raise SystemExit(
-        "ERROR: MT5_TERMINAL_PATH was not provided."
+        "ERROR: MT5_TERMINAL_PATH is missing."
     )
-
 
 if not Path(terminal_path).exists():
     raise SystemExit(
-        f"ERROR: MT5 terminal not found: {terminal_path}"
+        f"ERROR: MT5 terminal does not exist: {terminal_path}"
     )
 
 
@@ -64,7 +66,7 @@ if not Path(terminal_path).exists():
 # ============================================================
 
 print("=" * 70)
-print("SLK BOT - MT5 CONNECTION DIAGNOSTIC")
+print("SLK BOT - MT5 CONFIG CONNECTION TEST")
 print("=" * 70)
 
 print()
@@ -84,12 +86,16 @@ print(login)
 
 print()
 
-print("MetaTrader5 Python package:")
-print("Author:", getattr(
-    mt5,
-    "__author__",
-    "unknown"
-))
+print("Python MetaTrader5 package:")
+
+print(
+    "Author:",
+    getattr(
+        mt5,
+        "__author__",
+        "unknown"
+    )
+)
 
 print(
     "Version:",
@@ -102,34 +108,44 @@ print(
 
 print()
 
-print("MT5 Python API version:")
-print(mt5.version())
+print("Initial MT5 API version check:")
 
-print()
+print(
+    mt5.version()
+)
 
 
 # ============================================================
-# INITIALIZE MT5
+# CONNECT
 # ============================================================
 
+print()
 print("=" * 70)
-print("ATTEMPTING MT5 INITIALIZE")
+print("CONNECTING TO ALREADY STARTED MT5")
 print("=" * 70)
 
 print()
+
+print(
+    "The MT5 terminal was started separately by GitHub Actions."
+)
+
+print(
+    "Python will now connect to that terminal."
+)
+
+print()
+
 
 ok = mt5.initialize(
     terminal_path,
-    login=login,
-    password=password,
-    server=server,
     timeout=120000,
     portable=False,
 )
 
 
 # ============================================================
-# INITIALIZATION FAILURE
+# INITIALIZE FAILED
 # ============================================================
 
 if not ok:
@@ -141,28 +157,33 @@ if not ok:
 
     print()
 
+    error = mt5.last_error()
+
     print(
         "MT5 last error:"
     )
 
     print(
-        mt5.last_error()
+        error
     )
 
     print()
 
-    print(
-        "This means Python could not establish "
-        "IPC communication with the MT5 terminal."
-    )
+    if error[0] == -10005:
 
-    print()
+        print(
+            "IPC TIMEOUT DETECTED."
+        )
+
+        print(
+            "Python still cannot communicate with the MT5 terminal."
+        )
 
     raise SystemExit(1)
 
 
 # ============================================================
-# CONNECTION SUCCESS
+# SUCCESS
 # ============================================================
 
 try:
@@ -174,21 +195,18 @@ try:
 
     print()
 
-    print(
-        "Python successfully connected to MT5."
-    )
-
 
     # ========================================================
-    # TERMINAL INFORMATION
+    # TERMINAL INFO
     # ========================================================
 
-    print()
+    terminal_info = mt5.terminal_info()
+
     print("=" * 70)
     print("TERMINAL INFORMATION")
     print("=" * 70)
 
-    terminal_info = mt5.terminal_info()
+    print()
 
     if terminal_info is None:
 
@@ -202,7 +220,6 @@ try:
 
         raise SystemExit(2)
 
-    print()
 
     print(
         "Connected:",
@@ -215,24 +232,21 @@ try:
     )
 
     print(
-        "Community account:",
-        terminal_info.community_account
-    )
-
-    print(
         "Build:",
         terminal_info.build
     )
 
 
     # ========================================================
-    # ACCOUNT INFORMATION
+    # ACCOUNT
     # ========================================================
 
     print()
     print("=" * 70)
     print("ACCOUNT INFORMATION")
     print("=" * 70)
+
+    print()
 
     account = mt5.account_info()
 
@@ -248,7 +262,6 @@ try:
 
         raise SystemExit(3)
 
-    print()
 
     print(
         "Login:",
@@ -272,13 +285,15 @@ try:
 
 
     # ========================================================
-    # SYMBOL TEST
+    # SYMBOLS
     # ========================================================
 
     print()
     print("=" * 70)
-    print("SYMBOL / MARKET DATA TEST")
+    print("MARKET DATA TEST")
     print("=" * 70)
+
+    print()
 
     symbols = mt5.symbols_get()
 
@@ -294,7 +309,6 @@ try:
 
         raise SystemExit(4)
 
-    print()
 
     print(
         "TOTAL SYMBOLS:",
@@ -303,7 +317,7 @@ try:
 
 
     # ========================================================
-    # TARGET SYMBOLS
+    # TARGETS
     # ========================================================
 
     targets = [
@@ -335,10 +349,6 @@ try:
 
     for target in targets:
 
-        # ----------------------------------------------------
-        # Find matching broker symbol
-        # ----------------------------------------------------
-
         matches = [
             name
             for name in names
@@ -348,10 +358,7 @@ try:
         ]
 
 
-        # ----------------------------------------------------
-        # GOLD / XAUUSD fallback
-        # ----------------------------------------------------
-
+        # XAUUSD fallback
         if target == "XAUUSD":
 
             matches += [
@@ -363,10 +370,6 @@ try:
             ]
 
 
-        # ----------------------------------------------------
-        # Symbol not found
-        # ----------------------------------------------------
-
         if not matches:
 
             print(
@@ -375,10 +378,6 @@ try:
 
             continue
 
-
-        # ----------------------------------------------------
-        # Choose shortest matching symbol
-        # ----------------------------------------------------
 
         selected = sorted(
             set(matches),
@@ -398,12 +397,10 @@ try:
         # Select symbol
         # ----------------------------------------------------
 
-        selected_ok = mt5.symbol_select(
+        if not mt5.symbol_select(
             selected,
             True
-        )
-
-        if not selected_ok:
+        ):
 
             print(
                 "  symbol_select failed:"
@@ -418,14 +415,14 @@ try:
 
 
         # ----------------------------------------------------
-        # Request D1 data
+        # D1 DATA
         # ----------------------------------------------------
 
         rates = mt5.copy_rates_from_pos(
             selected,
             mt5.TIMEFRAME_D1,
             1,
-            5,
+            5
         )
 
 
@@ -446,15 +443,11 @@ try:
         if len(rates) == 0:
 
             print(
-                "  D1 data returned zero bars."
+                "  D1 returned zero bars."
             )
 
             continue
 
-
-        # ----------------------------------------------------
-        # Latest closed D1 candle
-        # ----------------------------------------------------
 
         latest_close = float(
             rates[-1][4]
@@ -472,7 +465,7 @@ try:
 
 
     # ========================================================
-    # SUCCESS
+    # FINAL SUCCESS
     # ========================================================
 
     print()
@@ -483,19 +476,19 @@ try:
     print()
 
     print(
-        "MT5 terminal connected successfully."
+        "MT5 terminal connected."
     )
 
     print(
-        "Market data was successfully queried."
+        "Account information was retrieved."
+    )
+
+    print(
+        "Market data was queried."
     )
 
     print()
 
-
-# ============================================================
-# CLEAN SHUTDOWN
-# ============================================================
 
 finally:
 
