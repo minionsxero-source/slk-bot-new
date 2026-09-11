@@ -6,77 +6,88 @@ import MetaTrader5 as mt5
 
 login = int(os.environ.get("MT5_LOGIN", "0"))
 password = os.environ.get("MT5_PASSWORD", "")
-server = os.environ.get("MT5_SERVER", "ICMarketsSC-Demo")
+server = os.environ.get("MT5_SERVER", "")
 terminal_path = os.environ.get("MT5_TERMINAL_PATH", "").strip()
 
 
 if not login or not password:
-    raise SystemExit(
-        "MT5_LOGIN and MT5_PASSWORD GitHub Secrets are required."
-    )
+    raise SystemExit("MT5_LOGIN and MT5_PASSWORD GitHub Secrets are required.")
+
+if not server:
+    raise SystemExit("MT5_SERVER GitHub Secret is required.")
+
+if not terminal_path:
+    raise SystemExit("MT5_TERMINAL_PATH was not provided.")
+
+if not Path(terminal_path).exists():
+    raise SystemExit(f"MT5 terminal not found: {terminal_path}")
 
 
-print(f"MT5 terminal path: {terminal_path or 'auto-discovery'}")
-print(f"MT5 server: {server}")
-print(f"MT5 login: {login}")
+print("=" * 60)
+print("MT5 CONNECTION DIAGNOSTIC")
+print("=" * 60)
+
+print(f"Terminal: {terminal_path}")
+print(f"Server: {server}")
+print(f"Login: {login}")
+
+print()
+print("Python MetaTrader5 package:")
+print("Author:", getattr(mt5, "__author__", "unknown"))
+print("Version:", getattr(mt5, "__version__", "unknown"))
+
+print()
+print("MT5 version:")
+print(mt5.version())
 
 
-if terminal_path and not Path(terminal_path).exists():
-    raise SystemExit(
-        f"MT5 terminal executable not found: {terminal_path}"
-    )
+print()
+print("Attempting initialize...")
 
-
-if terminal_path:
-    ok = mt5.initialize(
-        terminal_path,
-        login=login,
-        password=password,
-        server=server,
-        timeout=120000,
-        portable=True,
-    )
-else:
-    ok = mt5.initialize(
-        login=login,
-        password=password,
-        server=server,
-        timeout=120000,
-        portable=True,
-    )
+ok = mt5.initialize(
+    terminal_path,
+    login=login,
+    password=password,
+    server=server,
+    timeout=120000,
+    portable=False,
+)
 
 
 if not ok:
-    print("mt5.initialize() failed:", mt5.last_error())
+    print()
+    print("INITIALIZE FAILED")
+    print("Error:", mt5.last_error())
     raise SystemExit(1)
 
 
 try:
-    print("MT5 Python connection established.")
+    print()
+    print("INITIALIZE SUCCESSFUL")
 
     terminal_info = mt5.terminal_info()
+
+    print()
+    print("TERMINAL INFO:")
+    print(terminal_info)
 
     if terminal_info is None:
         print("terminal_info() failed:", mt5.last_error())
         raise SystemExit(2)
 
-    print(
-        f"TERMINAL: "
-        f"connected={terminal_info.connected} "
-        f"trade_allowed={terminal_info.trade_allowed}"
-    )
+    account = mt5.account_info()
 
-    info = mt5.account_info()
+    print()
+    print("ACCOUNT INFO:")
 
-    if info is None:
+    if account is None:
         print("account_info() failed:", mt5.last_error())
         raise SystemExit(3)
 
     print(
-        f"CONNECTED: "
-        f"login={info.login} "
-        f"server={info.server} "
-        f"trade_mode={info.trade_mode}"
+        f"login={account.login} "
+        f"server={account.server} "
+        f"trade_mode={account.trade_mode}"
     )
 
     symbols = mt5.symbols_get()
@@ -85,13 +96,8 @@ try:
         print("symbols_get() failed:", mt5.last_error())
         raise SystemExit(4)
 
-    names = [
-        s.name
-        for s in symbols
-        if getattr(s, "name", None)
-    ]
-
-    print(f"TOTAL SYMBOLS: {len(names)}")
+    print()
+    print(f"TOTAL SYMBOLS: {len(symbols)}")
 
     targets = [
         "EURUSD",
@@ -103,66 +109,77 @@ try:
         "US30",
     ]
 
+    print()
+    print("TESTING TARGET SYMBOLS")
+    print("-" * 60)
+
+    names = [
+        s.name
+        for s in symbols
+        if getattr(s, "name", None)
+    ]
+
     for target in targets:
 
         matches = [
-            n for n in names
-            if n.upper().startswith(target)
+            name
+            for name in names
+            if name.upper().startswith(target)
         ]
 
         if target == "XAUUSD":
             matches += [
-                n for n in names
-                if n.upper().startswith("GOLD")
+                name
+                for name in names
+                if name.upper().startswith("GOLD")
             ]
 
-        if matches:
-
-            selected = sorted(
-                set(matches),
-                key=lambda x: (len(x), x)
-            )[0]
-
-            print(f"{target}: selecting {selected}")
-
-            if not mt5.symbol_select(selected, True):
-                print(
-                    f"{target}: FOUND but symbol_select failed "
-                    f"for {selected}: {mt5.last_error()}"
-                )
-                continue
-
-            rates = mt5.copy_rates_from_pos(
-                selected,
-                mt5.TIMEFRAME_D1,
-                1,
-                5,
-            )
-
-            if rates is None or len(rates) == 0:
-
-                print(
-                    f"{target}: FOUND ({selected}) "
-                    f"but no D1 bars: {mt5.last_error()}"
-                )
-
-            else:
-
-                print(
-                    f"{target}: OK -> {selected}, "
-                    f"D1 bars={len(rates)}, "
-                    f"latest_close={float(rates[-1][4])}"
-                )
-
-        else:
-
+        if not matches:
             print(f"{target}: NOT FOUND")
+            continue
 
-    print(
-        "SMOKE TEST PASSED: "
-        "MT5 terminal connected and market data was queried."
-    )
+        selected = sorted(
+            set(matches),
+            key=lambda x: (len(x), x)
+        )[0]
+
+        print(f"{target}: {selected}")
+
+        if not mt5.symbol_select(selected, True):
+            print(
+                f"  symbol_select failed: "
+                f"{mt5.last_error()}"
+            )
+            continue
+
+        rates = mt5.copy_rates_from_pos(
+            selected,
+            mt5.TIMEFRAME_D1,
+            1,
+            5,
+        )
+
+        if rates is None or len(rates) == 0:
+            print(
+                f"  D1 data failed: "
+                f"{mt5.last_error()}"
+            )
+            continue
+
+        print(
+            f"  D1 bars: {len(rates)}"
+        )
+
+        print(
+            f"  Latest closed D1 close: "
+            f"{float(rates[-1][4])}"
+        )
+
+    print()
+    print("=" * 60)
+    print("SMOKE TEST PASSED")
+    print("MT5 terminal connected and market data was queried.")
+    print("=" * 60)
 
 finally:
-
     mt5.shutdown()
