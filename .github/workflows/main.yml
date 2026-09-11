@@ -8,23 +8,26 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      # --------------------------------------------------
+
+      # ==================================================
       # 1. Checkout repository
-      # --------------------------------------------------
+      # ==================================================
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # --------------------------------------------------
+
+      # ==================================================
       # 2. Install Python
-      # --------------------------------------------------
+      # ==================================================
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # --------------------------------------------------
-      # 3. Install older MetaTrader5 Python package
-      # --------------------------------------------------
+
+      # ==================================================
+      # 3. Install MetaTrader5 Python package
+      # ==================================================
       - name: Install Python dependencies
         shell: powershell
         run: |
@@ -34,34 +37,38 @@ jobs:
 
           python -c "import MetaTrader5 as mt5; print('MetaTrader5 package version:', mt5.__version__)"
 
-      # --------------------------------------------------
-      # 4. Download MetaTrader 5
-      # --------------------------------------------------
+
+      # ==================================================
+      # 4. Download MT5
+      # ==================================================
       - name: Download MetaTrader 5
         shell: powershell
         run: |
+
           $url = "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
 
-          $output = "$env:TEMP\mt5setup.exe"
+          $installer = "$env:TEMP\mt5setup.exe"
 
           Write-Host "Downloading MetaTrader 5..."
 
           Invoke-WebRequest `
             -Uri $url `
-            -OutFile $output
+            -OutFile $installer
 
-          if (-not (Test-Path $output)) {
+          if (-not (Test-Path $installer)) {
             throw "MT5 installer was not downloaded."
           }
 
-          Write-Host "MT5 installer downloaded successfully."
+          Write-Host "MT5 installer downloaded."
 
-      # --------------------------------------------------
+
+      # ==================================================
       # 5. Install MT5
-      # --------------------------------------------------
+      # ==================================================
       - name: Install MetaTrader 5
         shell: powershell
         run: |
+
           Write-Host "Installing MetaTrader 5..."
 
           Start-Process `
@@ -71,13 +78,15 @@ jobs:
 
           Write-Host "MT5 installation completed."
 
-      # --------------------------------------------------
+
+      # ==================================================
       # 6. Find terminal64.exe
-      # --------------------------------------------------
+      # ==================================================
       - name: Find MT5 terminal
         shell: powershell
         run: |
-          Write-Host "Searching for MetaTrader 5 terminal..."
+
+          Write-Host "Searching for terminal64.exe..."
 
           $paths = @(
             "C:\Program Files\MetaTrader 5\terminal64.exe",
@@ -92,7 +101,7 @@ jobs:
 
           if (-not $terminal) {
 
-            Write-Host "Standard location not found."
+            Write-Host "Standard paths not found."
             Write-Host "Searching Program Files..."
 
             $terminal = Get-ChildItem `
@@ -105,7 +114,7 @@ jobs:
           }
 
           if (-not $terminal) {
-            throw "MetaTrader 5 terminal64.exe was not found."
+            throw "terminal64.exe was not found."
           }
 
           Write-Host "MT5 terminal found:"
@@ -113,26 +122,83 @@ jobs:
 
           "MT5_TERMINAL_PATH=$terminal" >> $env:GITHUB_ENV
 
-      # --------------------------------------------------
-      # 7. Start MT5 normally
-      # --------------------------------------------------
-      - name: Start MT5
+
+      # ==================================================
+      # 7. Create temporary MT5 configuration
+      # ==================================================
+      - name: Create MT5 configuration
+        shell: powershell
+        env:
+          MT5_LOGIN: ${{ secrets.MT5_LOGIN }}
+          MT5_PASSWORD: ${{ secrets.MT5_PASSWORD }}
+          MT5_SERVER: ${{ secrets.MT5_SERVER }}
+
+        run: |
+
+          $configPath = "$env:RUNNER_TEMP\mt5_config.ini"
+
+          Write-Host "Creating temporary MT5 configuration..."
+
+          @"
+          [Common]
+          Login=$env:MT5_LOGIN
+          Password=$env:MT5_PASSWORD
+          Server=$env:MT5_SERVER
+          ProxyEnable=0
+          NewsEnable=0
+          KeepPrivate=1
+
+          [Experts]
+          Enabled=1
+          AllowLiveTrading=0
+          AllowDllImport=0
+
+          [Charts]
+          MaxBars=50000
+          "@ | Out-File `
+            -FilePath $configPath `
+            -Encoding ascii
+
+          if (-not (Test-Path $configPath)) {
+            throw "Failed to create MT5 configuration."
+          }
+
+          Write-Host "MT5 configuration created."
+
+          "MT5_CONFIG_PATH=$configPath" >> $env:GITHUB_ENV
+
+
+      # ==================================================
+      # 8. Start MT5 using config file
+      # ==================================================
+      - name: Start MT5 with configuration
         shell: powershell
         run: |
-          Write-Host "Starting MetaTrader 5..."
+
+          Write-Host "Starting MT5 with configuration file..."
+
+          Write-Host "Terminal:"
+          Write-Host "$env:MT5_TERMINAL_PATH"
+
+          Write-Host "Config:"
+          Write-Host "$env:MT5_CONFIG_PATH"
 
           Start-Process `
-            -FilePath "$env:MT5_TERMINAL_PATH"
+            -FilePath "$env:MT5_TERMINAL_PATH" `
+            -ArgumentList "/config:$env:MT5_CONFIG_PATH"
 
-          Write-Host "Waiting 30 seconds..."
+          Write-Host "MT5 started."
 
-          Start-Sleep -Seconds 30
+          Write-Host "Waiting 45 seconds..."
 
-          Write-Host "MT5 should now be running."
+          Start-Sleep -Seconds 45
 
-      # --------------------------------------------------
-      # 8. Run connection diagnostic
-      # --------------------------------------------------
+          Write-Host "MT5 initialization wait completed."
+
+
+      # ==================================================
+      # 9. Run diagnostic
+      # ==================================================
       - name: Run MT5 connection test
         shell: powershell
         env:
@@ -142,4 +208,25 @@ jobs:
           MT5_TERMINAL_PATH: ${{ env.MT5_TERMINAL_PATH }}
 
         run: |
+
           python mt5_smoke_test.py
+
+
+      # ==================================================
+      # 10. Cleanup
+      # ==================================================
+      - name: Cleanup MT5
+        if: always()
+        shell: powershell
+        run: |
+
+          Write-Host "Stopping MetaTrader 5..."
+
+          Get-Process `
+            -Name "terminal64" `
+            -ErrorAction SilentlyContinue |
+            Stop-Process `
+              -Force `
+              -ErrorAction SilentlyContinue
+
+          Write-Host "MT5 stopped."
